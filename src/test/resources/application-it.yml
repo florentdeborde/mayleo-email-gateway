@@ -1,0 +1,46 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;MODE=MySQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  threads:
+    enabled: true
+
+  sql:
+    init:
+      mode: always
+
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  h2:
+    console:
+      enabled: false
+      path: /h2-console
+
+mail:
+  internal:
+    host: smtp.test.com           # fake host
+    port: 587                     # fake port
+    username: test@test.com       # fake username
+    password: testpass            # fake password
+    tls: true
+    default-from: test@test.com   # fake default from
+
+app:
+  security:
+    key-salt: "it-key-salt-1234"
+    key-hmac: "it-key-hmac-1234"
+    key-smtp: "it-key-smtp-1234"
+    flag-hmac-enabled: true
+    expose-swagger: true
+    expose-actuator: true
+  mail:
+    max-retries: 3

@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: mayleo
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}   # Defaults to 'dev' if not set
+  datasource:
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  threads:
+    enabled: true
+mail:
+  internal:
+    host: ${INTERNAL_SMTP_HOST}
+    port: ${INTERNAL_SMTP_PORT}
+    username: ${INTERNAL_SMTP_USER}
+    password: ${INTERNAL_SMTP_PASS}
+    tls: true
+    default-from: ${INTERNAL_DEFAULT_FROM}
+app:
+  security:
+    key-salt: ${MAYLEO_KEY_SALT}
+    key-hmac: ${MAYLEO_KEY_HMAC}
+    key-smtp: ${MAYLEO_KEY_SMTP}
+    flag-hmac-enabled: ${MAYLEO_FLAG_HMAC_ENABLED:true}
+    expose-swagger: ${EXPOSE_SWAGGER:false}
+    expose-actuator: ${EXPOSE_ACTUATOR:false}
+  mail:
+    max-retries: ${MAIL_MAX_RETRIES:3}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, metrics, prometheus # prometheus is useful for Grafana later
+  endpoint:
+    health:
+      show-details: when_authorized
