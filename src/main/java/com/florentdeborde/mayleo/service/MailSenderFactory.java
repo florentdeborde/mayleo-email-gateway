@@ -34,7 +34,8 @@ public class MailSenderFactory {
             props.put("mail.transport.protocol", "smtp");
             props.put("mail.smtp.auth", "true");
 
-            if (config.getSmtpPort() == 465) {
+            Integer port = config.getSmtpPort();
+            if (port != null && port == 465) {
                 // SSL/TLS direct
                 props.put("mail.smtp.ssl.enable", "true");
                 props.put("mail.smtp.socketFactory.port", "465");
