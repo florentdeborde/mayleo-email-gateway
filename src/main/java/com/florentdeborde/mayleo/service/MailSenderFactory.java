@@ -33,7 +33,18 @@ public class MailSenderFactory {
             Properties props = mailSender.getJavaMailProperties();
             props.put("mail.transport.protocol", "smtp");
             props.put("mail.smtp.auth", "true");
-            props.put("mail.smtp.starttls.enable", config.getSmtpTls());
+
+            if (config.getSmtpPort() == 465) {
+                // SSL/TLS direct
+                props.put("mail.smtp.ssl.enable", "true");
+                props.put("mail.smtp.socketFactory.port", "465");
+                props.put("mail.smtp.socketFactory.class", "javax.net.ssl.SSLSocketFactory");
+                props.put("mail.smtp.starttls.enable", "false");
+            } else {
+                // STARTTLS
+                props.put("mail.smtp.starttls.enable", config.getSmtpTls());
+                props.put("mail.smtp.ssl.enable", "false");
+            }
 
             // Set timeouts to prevent the application from hanging if the SMTP server is unresponsive
             props.put("mail.smtp.connectiontimeout", "5000"); // 5s to establish connection
