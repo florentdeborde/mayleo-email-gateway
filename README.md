@@ -12,6 +12,7 @@ By abstracting the complexities of SMTP management and asset linking, Mayleo all
 
 - [🎯 Core Features](#-core-features)
 - [🧩 How it works](#-how-it-works)
+- [🔧 Environment Configuration](#-environment-configuration)
 - [📂 Project structure](#-project-structure)
 - [🧱 Tech Stack](#-tech-stack)
 - [🚀 Onboarding a New Client](#-onboarding-a-new-client)
@@ -56,6 +57,22 @@ By abstracting the complexities of SMTP management and asset linking, Mayleo all
 4. **Queueing**: The request is persisted as an `email_request` with a `PENDING` status to ensure zero data loss.
 5. **Async Dispatch**: A background worker picks up requests. Thanks to **ShedLock**, only one instance processes the queue at a time in multi-node deployments. It assembles the **Digital Postcard** and dispatches it.
 
+
+## 🔧 Environment Configuration
+
+Before starting, ensure you have defined the following environment variables:
+
+| Variable          | Usage           | Description                                                     |
+|:------------------|:----------------|:----------------------------------------------------------------|
+| `MAYLEO_KEY_SMTP` | **AES-256**     | 32-character key used to encrypt/decrypt SMTP passwords.        |
+| `MAYLEO_KEY_HMAC` | **AES-256**     | 32-character key used to encrypt/decrypt Clients' HMAC secrets. |
+| `MAYLEO_KEY_SALT` | **Salt**        | Secret salt for API key hashing.                                |
+| `DB_HOST`         | **Connection**  | Database server hostname or IP address.                         |
+| `DB_PORT`         | **Connection**  | Database server port (e.g., `3306` for MySQL).                  |
+| `DB_NAME`         | **Connection**  | Name of the schema/database for Mayleo.                         |
+| `DB_USERNAME`     | **Credentials** | Username used to connect to the database.                       |
+| `DB_PASSWORD`     | **Credentials** | Password used to connect to the database.                       |
+
 ## 📂 Project structure
 ```
 com.florentdeborde.mayleo
@@ -74,19 +91,6 @@ com.florentdeborde.mayleo
 **Java 17** • **Spring Boot 3** • **Spring Data JPA** • **Jakarta Mail** • **Scheduled Tasks**
 
 ## 🚀 Onboarding a New Client
-
-Before starting the gateway, ensure you have defined the following environment variables:
-
-| Variable          | Usage           | Description                                                     |
-|:------------------|:----------------|:----------------------------------------------------------------|
-| `MAYLEO_KEY_SMTP` | **AES-256**     | 32-character key used to encrypt/decrypt SMTP passwords.        |
-| `MAYLEO_KEY_HMAC` | **AES-256**     | 32-character key used to encrypt/decrypt Clients' HMAC secrets. |
-| `MAYLEO_KEY_SALT` | **Salt**        | Secret salt for API key hashing.                                |
-| `DB_HOST`         | **Connection**  | Database server hostname or IP address.                         |
-| `DB_PORT`         | **Connection**  | Database server port (e.g., `3306` for MySQL).                  |
-| `DB_NAME`         | **Connection**  | Name of the schema/database for Mayleo.                         |
-| `DB_USERNAME`     | **Credentials** | Username used to connect to the database.                       |
-| `DB_PASSWORD`     | **Credentials** | Password used to connect to the database.                       |
 
 ### Configuration
 To register a new service in Mayleo, execute these three queries in sequence. These examples use placeholders that you **must replace with your generated values**.
