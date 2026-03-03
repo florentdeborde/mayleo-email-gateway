@@ -10,14 +10,6 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
   threads:
     enabled: true
-mail:
-  internal:
-    host: ${INTERNAL_SMTP_HOST}
-    port: ${INTERNAL_SMTP_PORT}
-    username: ${INTERNAL_SMTP_USER}
-    password: ${INTERNAL_SMTP_PASS}
-    tls: true
-    default-from: ${INTERNAL_DEFAULT_FROM}
 app:
   security:
     key-salt: ${MAYLEO_KEY_SALT}
