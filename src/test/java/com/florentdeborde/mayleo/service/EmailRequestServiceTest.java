@@ -1,7 +1,7 @@
 package com.florentdeborde.mayleo.service;
 
 import com.florentdeborde.mayleo.dto.request.EmailRequestDto;
-import com.florentdeborde.mayleo.dto.internal.UsageStats;
+
 import com.florentdeborde.mayleo.exception.ExceptionCode;
 import com.florentdeborde.mayleo.exception.MayleoException;
 import com.florentdeborde.mayleo.metrics.MayleoMetrics;
@@ -71,10 +71,7 @@ class EmailRequestServiceTest {
                                 .imagePath("postcards/postcard-1.jpg")
                                 .langCode("en")
                                 .build();
-                UsageStats mockStats = new UsageStats(0L, 0L);
-
-                when(repository.getUsageStats(eq(apiClient), any(Instant.class), any(Instant.class)))
-                                .thenReturn(mockStats);
+                // No UsageStats mocking needed since Bucket4j handles it in memory
                 when(emailConfigRepository.findByApiClient(apiClient)).thenReturn(Optional.of(emailConfig));
                 when(repository.save(any(EmailRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -105,11 +102,7 @@ class EmailRequestServiceTest {
         @Test
         @DisplayName("❌ createEmailRequest: Should throw EMAIL_CONFIG_NOT_FOUND when config is missing")
         void createEmailRequest_NoConfig() {
-                UsageStats mockStats = new UsageStats(0L, 0L);
-
-                when(emailConfigRepository.findByApiClient(apiClient)).thenReturn(Optional.empty());
-                when(repository.getUsageStats(eq(apiClient), any(Instant.class), any(Instant.class)))
-                                .thenReturn(mockStats);
+                // No UsageStats mocking needed
 
                 MayleoException ex = assertThrows(MayleoException.class,
                                 () -> emailRequestService.createEmailRequest(apiClient, new EmailRequestDto(), null));
@@ -123,47 +116,51 @@ class EmailRequestServiceTest {
         @Test
         @DisplayName("❌ createEmailRequest: Should throw RPM_LIMIT_EXCEEDED when rate limit is reached")
         void createEmailRequest_RpmLimitExceeded() {
-                // GIVEN: Client has a limit of 10 RPM, and has already sent 10 emails in the
-                // last minute
-                apiClient.setRpmLimit(10);
-                UsageStats usageStats = new UsageStats(50L, 10L); // 50 today, 10 this minute
+                // GIVEN: Client has a limit of 1 RPM
+                apiClient.setId("client-rpm-test"); // Unique ID for fresh Bucket4j instance
+                apiClient.setRpmLimit(1);
+                apiClient.setDailyQuota(10);
 
-                // Mocking the new optimized single-call method
-                when(repository.getUsageStats(eq(apiClient), any(Instant.class), any(Instant.class)))
-                                .thenReturn(usageStats);
+                when(emailConfigRepository.findByApiClient(apiClient)).thenReturn(Optional.of(emailConfig));
+                when(repository.save(any(EmailRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-                // WHEN & THEN: Attempting to create a request should trigger the RPM exception
+                // WHEN: Consume the 1 allowed request per minute
+                emailRequestService.createEmailRequest(apiClient, new EmailRequestDto(), null);
+
+                // THEN: The second request immediately fails with RPM_LIMIT_EXCEEDED
                 MayleoException ex = assertThrows(MayleoException.class,
                                 () -> emailRequestService.createEmailRequest(apiClient, new EmailRequestDto(), null));
                 assertEquals(ExceptionCode.RPM_LIMIT_EXCEEDED, ex.getExceptionCode());
 
-                verify(repository, never()).save(any());
-                verify(metrics).recordApiRequest(apiClient.getName(), MayleoMetrics.OUTCOME_RECEIVED);
+                verify(repository, times(1)).save(any());
+                verify(metrics, times(2)).recordApiRequest(apiClient.getName(), MayleoMetrics.OUTCOME_RECEIVED);
                 verify(metrics).recordApiRequest(apiClient.getName(), MayleoMetrics.OUTCOME_ERR_RPM);
-                verify(metrics, never()).recordApiRequest(apiClient.getName(), MayleoMetrics.OUTCOME_ACCEPTED);
+                verify(metrics, times(1)).recordApiRequest(apiClient.getName(), MayleoMetrics.OUTCOME_ACCEPTED);
         }
 
         @Test
         @DisplayName("❌ createEmailRequest: Should throw DAILY_QUOTA_EXCEEDED when daily quota is reached")
         void createEmailRequest_DailyQuotaExceeded() {
-                // GIVEN: Client has a daily quota of 1000, and has already reached it
-                apiClient.setDailyQuota(1000);
-                UsageStats usageStats = new UsageStats(1000L, 0L); // 1000 today, only 0 this minute
+                // GIVEN: Client has a daily quota of 1
+                apiClient.setId("client-daily-test"); // Unique ID for fresh Bucket4j instance
+                apiClient.setRpmLimit(10);
+                apiClient.setDailyQuota(1);
 
-                // Mocking the new optimized single-call method
-                when(repository.getUsageStats(eq(apiClient), any(Instant.class), any(Instant.class)))
-                                .thenReturn(usageStats);
+                when(emailConfigRepository.findByApiClient(apiClient)).thenReturn(Optional.of(emailConfig));
+                when(repository.save(any(EmailRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-                // WHEN & THEN: Attempting to create a request should trigger the Daily Quota
-                // exception
+                // WHEN: Consume the 1 allowed request per day
+                emailRequestService.createEmailRequest(apiClient, new EmailRequestDto(), null);
+
+                // THEN: The second request fails with DAILY_QUOTA_EXCEEDED
                 MayleoException ex = assertThrows(MayleoException.class,
                                 () -> emailRequestService.createEmailRequest(apiClient, new EmailRequestDto(), null));
                 assertEquals(ExceptionCode.DAILY_QUOTA_EXCEEDED, ex.getExceptionCode());
 
-                verify(repository, never()).save(any());
-                verify(metrics).recordApiRequest(apiClient.getName(), MayleoMetrics.OUTCOME_RECEIVED);
+                verify(repository, times(1)).save(any());
+                verify(metrics, times(2)).recordApiRequest(apiClient.getName(), MayleoMetrics.OUTCOME_RECEIVED);
                 verify(metrics).recordApiRequest(apiClient.getName(), MayleoMetrics.OUTCOME_ERR_DAILY_QUOTA);
-                verify(metrics, never()).recordApiRequest(apiClient.getName(), MayleoMetrics.OUTCOME_ACCEPTED);
+                verify(metrics, times(1)).recordApiRequest(apiClient.getName(), MayleoMetrics.OUTCOME_ACCEPTED);
         }
 
         @Test
@@ -183,7 +180,6 @@ class EmailRequestServiceTest {
 
                 // THEN
                 assertEquals(existingId, resultId);
-                verify(repository, never()).getUsageStats(any(), any(), any());
                 verify(repository, never()).save(any());
                 verify(metrics, never()).recordApiRequest(any(), any());
         }
@@ -195,8 +191,6 @@ class EmailRequestServiceTest {
                 String key = "race-key";
                 String existingId = "id-saved-by-concurrent-thread";
                 EmailRequest existingRequest = EmailRequest.builder().id(existingId).build();
-                UsageStats mockStats = new UsageStats(0L, 0L);
-
                 // MOCK: First call (initial check) returns empty,
                 // second call (inside catch block) returns the request saved by the other
                 // thread
@@ -204,7 +198,6 @@ class EmailRequestServiceTest {
                                 .thenReturn(Optional.empty())
                                 .thenReturn(Optional.of(existingRequest));
 
-                when(repository.getUsageStats(any(), any(), any())).thenReturn(mockStats);
                 when(emailConfigRepository.findByApiClient(apiClient)).thenReturn(Optional.of(emailConfig));
 
                 // MOCK: Simulate the DB rejecting the insert due to the UNIQUE constraint
@@ -241,9 +234,7 @@ class EmailRequestServiceTest {
                                 .imagePath("test.jpg")
                                 .build();
 
-                UsageStats mockStats = new UsageStats(0L, 0L);
-
-                when(repository.getUsageStats(any(), any(), any())).thenReturn(mockStats);
+                // Mock setup
                 when(emailConfigRepository.findByApiClient(apiClient)).thenReturn(Optional.of(emailConfig));
                 when(repository.save(any(EmailRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
 

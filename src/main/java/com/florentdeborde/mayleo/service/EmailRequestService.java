@@ -1,6 +1,5 @@
 package com.florentdeborde.mayleo.service;
 
-import com.florentdeborde.mayleo.dto.internal.UsageStats;
 import com.florentdeborde.mayleo.exception.ExceptionCode;
 import com.florentdeborde.mayleo.exception.MayleoException;
 import com.florentdeborde.mayleo.dto.request.EmailRequestDto;
@@ -15,10 +14,11 @@ import org.jsoup.Jsoup;
 import org.jsoup.safety.Safelist;
 
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneOffset;
-import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.time.Duration;
+import java.util.concurrent.ConcurrentHashMap;
+import io.github.bucket4j.Bandwidth;
+import io.github.bucket4j.Bucket;
 
 @Service
 @Slf4j
@@ -29,6 +29,9 @@ public class EmailRequestService {
     private final EmailConfigRepository emailConfigRepository;
 
     private final MayleoMetrics metrics;
+
+    private final Map<String, Bucket> rpmBuckets = new ConcurrentHashMap<>();
+    private final Map<String, Bucket> dailyBuckets = new ConcurrentHashMap<>();
 
     public EmailRequestService(EmailRequestRepository repository, EmailConfigRepository emailConfigRepository,
             MayleoMetrics metrics) {
@@ -73,21 +76,36 @@ public class EmailRequestService {
     }
 
     private void validateRpmLimitAndDailyQuota(ApiClient apiClient) {
-        Instant now = Instant.now();
-        Instant oneMinuteAgo = now.minus(1, ChronoUnit.MINUTES);
-        Instant startOfDay = LocalDate.now().atStartOfDay(ZoneOffset.UTC).toInstant();
+        Bucket dailyBucket = resolveDailyBucket(apiClient);
+        Bucket rpmBucket = resolveRpmBucket(apiClient);
 
-        UsageStats stats = repository.getUsageStats(apiClient, startOfDay, oneMinuteAgo);
-
-        if (stats.rpmUsage() >= apiClient.getRpmLimit()) {
+        if (!rpmBucket.tryConsume(1)) {
             metrics.recordApiRequest(apiClient.getName(), MayleoMetrics.OUTCOME_ERR_RPM);
             throw new MayleoException(ExceptionCode.RPM_LIMIT_EXCEEDED);
         }
 
-        if (stats.dailyUsage() >= apiClient.getDailyQuota()) {
+        if (!dailyBucket.tryConsume(1)) {
             metrics.recordApiRequest(apiClient.getName(), MayleoMetrics.OUTCOME_ERR_DAILY_QUOTA);
             throw new MayleoException(ExceptionCode.DAILY_QUOTA_EXCEEDED);
         }
+    }
+
+    private Bucket resolveRpmBucket(ApiClient apiClient) {
+        return rpmBuckets.computeIfAbsent(apiClient.getId(), id -> Bucket.builder()
+                .addLimit(Bandwidth.builder()
+                        .capacity(apiClient.getRpmLimit())
+                        .refillIntervally(apiClient.getRpmLimit(), Duration.ofMinutes(1))
+                        .build())
+                .build());
+    }
+
+    private Bucket resolveDailyBucket(ApiClient apiClient) {
+        return dailyBuckets.computeIfAbsent(apiClient.getId(), id -> Bucket.builder()
+                .addLimit(Bandwidth.builder()
+                        .capacity(apiClient.getDailyQuota())
+                        .refillIntervally(apiClient.getDailyQuota(), Duration.ofDays(1))
+                        .build())
+                .build());
     }
 
     private EmailRequest buildEmailRequest(EmailRequestDto dto, ApiClient apiClient, EmailConfig emailConfig,
