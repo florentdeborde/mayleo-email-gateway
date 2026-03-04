@@ -25,6 +25,7 @@ By abstracting the complexities of SMTP management and asset linking, Mayleo all
 - **Advanced Security & Integrity**:
     - **HMAC Request Signing**: Per-client signature validation to guarantee payload integrity and prevent man-in-the-middle tampering.
     - **Domain Whitelisting**: Strict **Origin header validation** ensuring API keys are only functional from authorized client environments.
+    - **XSS & HTML Sanitization**: Complete stripping of all HTML tags from the subjects and messages on-the-fly, neutralizing injection or Cross-Site Scripting attempts before any data is stored.
     - **Developer Flexibility**: Environment-aware security flags to toggle HMAC validation in local/dev environments for easier integration testing.
 - **Dedicated SMTP Routing**:
     - **Client-Specific Delivery**: Every email is routed exclusively through the client's own SMTP provider, ensuring total isolation of sender reputation.

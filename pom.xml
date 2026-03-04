@@ -108,6 +108,12 @@
 			<artifactId>shedlock-provider-jdbc-template</artifactId>
 			<version>5.10.0</version>
 		</dependency>
+		<!-- Security / Sanitization -->
+		<dependency>
+			<groupId>org.jsoup</groupId>
+			<artifactId>jsoup</artifactId>
+			<version>1.17.2</version>
+		</dependency>
 	</dependencies>
 
 	<build>

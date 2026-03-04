@@ -11,7 +11,8 @@ import com.florentdeborde.mayleo.repository.EmailRequestRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.web.util.HtmlUtils;
+import org.jsoup.Jsoup;
+import org.jsoup.safety.Safelist;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -29,7 +30,8 @@ public class EmailRequestService {
 
     private final MayleoMetrics metrics;
 
-    public EmailRequestService(EmailRequestRepository repository , EmailConfigRepository emailConfigRepository, MayleoMetrics metrics) {
+    public EmailRequestService(EmailRequestRepository repository, EmailConfigRepository emailConfigRepository,
+            MayleoMetrics metrics) {
         this.repository = repository;
         this.emailConfigRepository = emailConfigRepository;
         this.metrics = metrics;
@@ -63,7 +65,8 @@ public class EmailRequestService {
     }
 
     private Optional<String> findExistingId(ApiClient apiClient, String idempotencyKey) {
-        if (idempotencyKey == null) return Optional.empty();
+        if (idempotencyKey == null)
+            return Optional.empty();
 
         return repository.findByApiClientAndIdempotencyKey(apiClient, idempotencyKey)
                 .map(EmailRequest::getId);
@@ -87,13 +90,14 @@ public class EmailRequestService {
         }
     }
 
-    private EmailRequest buildEmailRequest(EmailRequestDto dto, ApiClient apiClient, EmailConfig emailConfig, String idempotencyKey) {
+    private EmailRequest buildEmailRequest(EmailRequestDto dto, ApiClient apiClient, EmailConfig emailConfig,
+            String idempotencyKey) {
         String preparedSubject = fallback(dto.getSubject(), emailConfig.getDefaultSubject());
         String preparedMessage = fallback(dto.getMessage(), emailConfig.getDefaultMessage());
 
-        // Sanitization (Anti-XSS)
-        preparedSubject = escapeHtml(preparedSubject);
-        preparedMessage = escapeHtml(preparedMessage);
+        // Sanitization (Anti-XSS - 100% removal)
+        preparedSubject = cleanHtml(preparedSubject);
+        preparedMessage = cleanHtml(preparedMessage);
 
         return EmailRequest.builder()
                 .id(UUID.randomUUID().toString())
@@ -110,11 +114,11 @@ public class EmailRequestService {
                 .build();
     }
 
-    public static String escapeHtml(String input) {
+    public static String cleanHtml(String input) {
         if (input == null) {
             return null;
         }
-        return HtmlUtils.htmlEscape(input);
+        return Jsoup.clean(input, Safelist.none());
     }
 
     private String fallback(String value, String defaultValue) {
