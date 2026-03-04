@@ -11,6 +11,7 @@ public enum ExceptionCode {
     EMAIL_CONFIG_INCOMPLETE("Email configuration related to the api key provided is incomplete"),
     DAILY_QUOTA_EXCEEDED("Daily quota exceeded"),
     RPM_LIMIT_EXCEEDED("Request per minute limit exceeded"),
+    INVALID_REQUEST("Invalid request parameters"),
     INTERNAL_ERROR("Internal server error"),
 
     INVALID_SIGNATURE("Internal server error"),

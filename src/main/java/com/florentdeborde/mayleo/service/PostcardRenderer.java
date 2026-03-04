@@ -66,22 +66,29 @@ public class PostcardRenderer {
     }
 
     private Postcard resolvePostcard(EmailRequest request) throws IOException {
-        // TODO: Implement CLIENT_STORAGE (DEFAULT only for now)
-
         String localPath = "";
         String filename = null;
 
         if (request.getImagePath() != null && !request.getImagePath().isBlank()) {
             String imagePath = request.getImagePath();
-            if (imagePath.startsWith("/"))
-                imagePath = imagePath.substring(1);
-            String targetPath = localPath + imagePath;
 
-            if (new ClassPathResource(targetPath).exists()) {
-                filename = targetPath;
+            // TODO: Revisit validation logic when supporting CLIENT_STORAGE
+            // (DEFAULT only for now)
+            if (imagePath.contains("..")
+                    || !imagePath.startsWith("postcards/") && !imagePath.startsWith("/postcards/")) {
+                log.warn("[{}] Invalid or unsafe image path provided: {}. Falling back to random image.",
+                        request.getId(), imagePath);
             } else {
-                log.warn("[{}] Requested image not found: {}. Falling back to random image.", request.getId(),
-                        targetPath);
+                if (imagePath.startsWith("/"))
+                    imagePath = imagePath.substring(1);
+                String targetPath = localPath + imagePath;
+
+                if (new ClassPathResource(targetPath).exists()) {
+                    filename = targetPath;
+                } else {
+                    log.warn("[{}] Requested image not found: {}. Falling back to random image.", request.getId(),
+                            targetPath);
+                }
             }
         }
 

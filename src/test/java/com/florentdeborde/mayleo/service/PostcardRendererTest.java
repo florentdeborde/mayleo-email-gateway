@@ -53,12 +53,30 @@ class PostcardRendererTest {
     }
 
     @Test
-    @DisplayName("✅ render: Should use random fallback when imagePath is invalid")
-    void render_FallbackWhenImageNotFound() {
+    @DisplayName("✅ render: Should use random fallback when path does not contain postcards")
+    void render_FallbackWhenPathDoesNotContainPostcards() {
         // GIVEN
         EmailRequest request = EmailRequest.builder()
                 .id("test-fallback")
                 .imagePath("invalid/path.jpg")
+                .build();
+
+        // WHEN
+        PostcardHtml result = postcardRenderer.render(request, "Note");
+
+        // THEN
+        assertNotNull(result);
+        assertTrue(result.getPostcard().getFilename().startsWith("postcards/postcard-"));
+        assertTrue(result.getPostcard().getFilename().endsWith(".jpg"));
+    }
+
+    @Test
+    @DisplayName("✅ render: Should use random fallback when path contains two dots")
+    void render_FallbackWhenPathContainsTwoDots() {
+        // GIVEN
+        EmailRequest request = EmailRequest.builder()
+                .id("test-fallback")
+                .imagePath("../path.jpg")
                 .build();
 
         // WHEN
