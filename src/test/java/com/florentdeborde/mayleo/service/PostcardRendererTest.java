@@ -7,6 +7,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import org.springframework.context.MessageSource;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -15,10 +20,14 @@ import static org.junit.jupiter.api.Assertions.*;
 class PostcardRendererTest {
 
     private PostcardRenderer postcardRenderer;
+    private MessageSource messageSource;
 
     @BeforeEach
     void setUp() {
-        postcardRenderer = new PostcardRenderer();
+        messageSource = mock(MessageSource.class);
+        when(messageSource.getMessage(any(String.class), any(), any()))
+                .thenReturn("Mocked message");
+        postcardRenderer = new PostcardRenderer(messageSource);
     }
 
     @Test
@@ -101,7 +110,8 @@ class PostcardRendererTest {
     @DisplayName("♻ invalidateTemplateCache: Should clear the template map")
     void invalidateTemplateCache_ShouldClearMap() {
         // GIVEN
-        Map<String, String> cache = (Map<String, String>) ReflectionTestUtils.getField(postcardRenderer, "templateCache");
+        Map<String, String> cache = (Map<String, String>) ReflectionTestUtils.getField(postcardRenderer,
+                "templateCache");
         cache.put("templates/postcard-email-landscape.html", "<html>Mock</html>");
 
         assertFalse(cache.isEmpty());
@@ -117,7 +127,8 @@ class PostcardRendererTest {
     @DisplayName("♻ invalidateOrientationImageCache: Should remove specific image from cache")
     void invalidateOrientationImageCache_ShouldRemoveSpecificKey() {
         // GIVEN
-        Map<String, Boolean> cache = (Map<String, Boolean>) ReflectionTestUtils.getField(postcardRenderer, "imageOrientationCache");
+        Map<String, Boolean> cache = (Map<String, Boolean>) ReflectionTestUtils.getField(postcardRenderer,
+                "imageOrientationCache");
         String imgPath = "postcards/postcard-0.jpg";
         cache.put(imgPath, true);
 

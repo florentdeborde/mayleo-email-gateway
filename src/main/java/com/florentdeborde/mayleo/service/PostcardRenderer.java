@@ -4,6 +4,7 @@ import com.florentdeborde.mayleo.model.EmailRequest;
 import com.florentdeborde.mayleo.dto.internal.Postcard;
 import com.florentdeborde.mayleo.dto.internal.PostcardHtml;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.MessageSource;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
@@ -13,6 +14,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
@@ -25,18 +27,32 @@ public class PostcardRenderer {
     private final Map<String, String> templateCache = new ConcurrentHashMap<>();
     private final Map<String, Boolean> imageOrientationCache = new ConcurrentHashMap<>();
     private final Random random = new Random();
+    private final MessageSource messageSource;
 
+    public PostcardRenderer(MessageSource messageSource) {
+        this.messageSource = messageSource;
+    }
 
     public PostcardHtml render(EmailRequest request, String smallNote) {
         try {
             String mainText = request.getMessage();
             Postcard postcard = resolvePostcard(request);
 
-            String templatePath = postcard.isLandscape() ?
-                    "templates/postcard-email-landscape.html" :
-                    "templates/postcard-email-portrait.html";
+            String templatePath = postcard.isLandscape() ? "templates/postcard-email-landscape.html"
+                    : "templates/postcard-email-portrait.html";
 
             String template = loadTemplate(templatePath, request.getId());
+
+            String lang = request.getLangCode() != null ? request.getLangCode().toLowerCase() : "en";
+            Locale locale = Locale.forLanguageTag(lang);
+            String headerText = messageSource.getMessage("email.postcard.header.text", null, locale);
+            String footerText = messageSource.getMessage("email.postcard.footer.text", null, locale);
+            String madeByText = messageSource.getMessage("email.postcard.madeby.text",
+                    new Object[] { "florentdeborde" }, locale);
+
+            template = template.replace("{{headerText}}", headerText);
+            template = template.replace("{{footerText}}", footerText);
+            template = template.replace("{{madeByText}}", madeByText);
             template = template.replace("{{imageUrl}}", "cid:postcardImage");
             template = template.replace("{{mainText}}", mainText != null ? mainText : "");
             template = template.replace("{{smallNote}}", smallNote != null ? smallNote : "");
@@ -44,7 +60,8 @@ public class PostcardRenderer {
             return new PostcardHtml(template, postcard);
 
         } catch (Exception e) {
-            throw new RuntimeException("[%s] Failed to load email template: %s".formatted(request.getId(), e.getMessage()));
+            throw new RuntimeException(
+                    "[%s] Failed to load email template: %s".formatted(request.getId(), e.getMessage()));
         }
     }
 
@@ -56,13 +73,15 @@ public class PostcardRenderer {
 
         if (request.getImagePath() != null && !request.getImagePath().isBlank()) {
             String imagePath = request.getImagePath();
-            if (imagePath.startsWith("/")) imagePath = imagePath.substring(1);
+            if (imagePath.startsWith("/"))
+                imagePath = imagePath.substring(1);
             String targetPath = localPath + imagePath;
 
             if (new ClassPathResource(targetPath).exists()) {
                 filename = targetPath;
             } else {
-                log.warn("[{}] Requested image not found: {}. Falling back to random image.", request.getId(), targetPath);
+                log.warn("[{}] Requested image not found: {}. Falling back to random image.", request.getId(),
+                        targetPath);
             }
         }
 
@@ -98,7 +117,8 @@ public class PostcardRenderer {
                     return reader.lines().collect(Collectors.joining("\n"));
                 }
             } catch (IOException e) {
-                throw new RuntimeException("[%s] (First access) Failed to read template: %s".formatted(requestId, path));
+                throw new RuntimeException(
+                        "[%s] (First access) Failed to read template: %s".formatted(requestId, path));
             }
         });
     }
