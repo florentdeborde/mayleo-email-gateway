@@ -43,7 +43,16 @@ class EmailRequestServiceTest {
         private EmailConfig emailConfig;
 
         @BeforeEach
-        void setUp() {
+        void setUp() throws Exception {
+                // Clear Caches across tests using Reflection to avoid context bleeding
+                java.lang.reflect.Field rpmField = EmailRequestService.class.getDeclaredField("rpmBuckets");
+                rpmField.setAccessible(true);
+                ((com.github.benmanes.caffeine.cache.Cache<?, ?>) rpmField.get(emailRequestService)).invalidateAll();
+
+                java.lang.reflect.Field dailyField = EmailRequestService.class.getDeclaredField("dailyBuckets");
+                dailyField.setAccessible(true);
+                ((com.github.benmanes.caffeine.cache.Cache<?, ?>) dailyField.get(emailRequestService)).invalidateAll();
+
                 apiClient = ApiClient.builder()
                                 .id("client-123")
                                 .name("Test Client")

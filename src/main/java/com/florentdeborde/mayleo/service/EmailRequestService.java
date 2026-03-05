@@ -17,6 +17,8 @@ import java.time.Instant;
 import java.util.*;
 import java.time.Duration;
 import java.util.concurrent.ConcurrentHashMap;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
 
@@ -30,8 +32,13 @@ public class EmailRequestService {
 
     private final MayleoMetrics metrics;
 
-    private final Map<String, Bucket> rpmBuckets = new ConcurrentHashMap<>();
-    private final Map<String, Bucket> dailyBuckets = new ConcurrentHashMap<>();
+    private final Cache<String, Bucket> rpmBuckets = Caffeine.newBuilder()
+            .expireAfterAccess(Duration.ofHours(1))
+            .build();
+
+    private final Cache<String, Bucket> dailyBuckets = Caffeine.newBuilder()
+            .expireAfterAccess(Duration.ofHours(1))
+            .build();
 
     public EmailRequestService(EmailRequestRepository repository, EmailConfigRepository emailConfigRepository,
             MayleoMetrics metrics) {
@@ -76,6 +83,15 @@ public class EmailRequestService {
     }
 
     private void validateRpmLimitAndDailyQuota(ApiClient apiClient) {
+        if (apiClient.getRpmLimit() <= 0) {
+            metrics.recordApiRequest(apiClient.getName(), MayleoMetrics.OUTCOME_ERR_RPM);
+            throw new MayleoException(ExceptionCode.RPM_LIMIT_EXCEEDED);
+        }
+        if (apiClient.getDailyQuota() <= 0) {
+            metrics.recordApiRequest(apiClient.getName(), MayleoMetrics.OUTCOME_ERR_DAILY_QUOTA);
+            throw new MayleoException(ExceptionCode.DAILY_QUOTA_EXCEEDED);
+        }
+
         Bucket dailyBucket = resolveDailyBucket(apiClient);
         Bucket rpmBucket = resolveRpmBucket(apiClient);
 
@@ -91,7 +107,7 @@ public class EmailRequestService {
     }
 
     private Bucket resolveRpmBucket(ApiClient apiClient) {
-        return rpmBuckets.computeIfAbsent(apiClient.getId(), id -> Bucket.builder()
+        return rpmBuckets.get(apiClient.getId(), id -> Bucket.builder()
                 .addLimit(Bandwidth.builder()
                         .capacity(apiClient.getRpmLimit())
                         .refillIntervally(apiClient.getRpmLimit(), Duration.ofMinutes(1))
@@ -100,12 +116,18 @@ public class EmailRequestService {
     }
 
     private Bucket resolveDailyBucket(ApiClient apiClient) {
-        return dailyBuckets.computeIfAbsent(apiClient.getId(), id -> Bucket.builder()
+        return dailyBuckets.get(apiClient.getId(), id -> Bucket.builder()
                 .addLimit(Bandwidth.builder()
                         .capacity(apiClient.getDailyQuota())
                         .refillIntervally(apiClient.getDailyQuota(), Duration.ofDays(1))
                         .build())
                 .build());
+    }
+
+    public void evictBuckets(String apiClientId) {
+        log.info("[Security] Evicting rate limit buckets for client: {}", apiClientId);
+        rpmBuckets.invalidate(apiClientId);
+        dailyBuckets.invalidate(apiClientId);
     }
 
     private EmailRequest buildEmailRequest(EmailRequestDto dto, ApiClient apiClient, EmailConfig emailConfig,

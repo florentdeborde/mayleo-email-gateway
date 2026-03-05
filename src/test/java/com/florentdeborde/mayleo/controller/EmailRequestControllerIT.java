@@ -9,6 +9,7 @@ import com.florentdeborde.mayleo.model.ImageSource;
 import com.florentdeborde.mayleo.repository.ApiClientRepository;
 import com.florentdeborde.mayleo.repository.EmailConfigRepository;
 import com.florentdeborde.mayleo.security.ApiKeyEncoder;
+import com.florentdeborde.mayleo.service.EmailRequestService;
 import com.florentdeborde.mayleo.service.HmacService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -25,7 +26,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
 
 import java.time.Instant;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -58,6 +58,9 @@ class EmailRequestControllerIT {
 
     @Autowired
     private HmacService hmacService;
+
+    @Autowired
+    private EmailRequestService emailRequestService;
 
     @Value("${app.security.key-salt}")
     private String salt;
@@ -310,6 +313,49 @@ class EmailRequestControllerIT {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(dto)))
                 .andExpect(status().isTooManyRequests());
+    }
+
+    @Test
+    @DisplayName("✅ Service should allow request after daily quota is increased (Recovery Scenario)")
+    void should_allow_request_after_quota_increase() throws Exception {
+        String signature = generateTestSignature(dto, CLIENT_SPECIFIC_SECRET);
+        ApiClient client = apiClientRepository.findByApiKey(hashedApiKey).orElseThrow();
+
+        // Quota 1
+        client.setDailyQuota(1);
+        apiClientRepository.saveAndFlush(client);
+
+        // 1st request: consumpt quto
+        mockMvc.perform(post(urlTemplate)
+                        .header(headerKeyName, PLAIN_API_KEY)
+                        .header(headerHmacName, signature)
+                        .header("Origin", allowedDomain)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(dto)))
+                .andExpect(status().isAccepted());
+
+        // 2nd request
+        mockMvc.perform(post(urlTemplate)
+                        .header(headerKeyName, PLAIN_API_KEY)
+                        .header(headerHmacName, signature)
+                        .header("Origin", allowedDomain)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(dto)))
+                .andExpect(status().isTooManyRequests());
+
+        // Increment quota
+        client.setDailyQuota(100);
+        apiClientRepository.saveAndFlush(client);
+        emailRequestService.evictBuckets(client.getId());
+
+        // 3rd request
+        mockMvc.perform(post(urlTemplate)
+                        .header(headerKeyName, PLAIN_API_KEY)
+                        .header(headerHmacName, signature)
+                        .header("Origin", allowedDomain)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(dto)))
+                .andExpect(status().isAccepted());
     }
 
     @Test
