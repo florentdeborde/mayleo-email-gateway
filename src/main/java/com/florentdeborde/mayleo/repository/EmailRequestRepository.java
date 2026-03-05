@@ -4,6 +4,7 @@ import com.florentdeborde.mayleo.model.ApiClient;
 import com.florentdeborde.mayleo.model.EmailRequest;
 import com.florentdeborde.mayleo.model.EmailRequestStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -21,6 +22,13 @@ public interface EmailRequestRepository extends JpaRepository<EmailRequest, Stri
         // Find stuck requests (e.g. SENDING for too long)
         List<EmailRequest> findByStatusAndProcessedAtBefore(EmailRequestStatus status, Instant cutoff);
 
-        Optional<EmailRequest> findByApiClientAndIdempotencyKey(ApiClient client, String idempotencyKe);
+        Optional<EmailRequest> findByApiClientAndIdempotencyKey(ApiClient client, String idempotencyKey);
+
+        @Modifying
+        @Query(value = "UPDATE email_request SET status = 'SENDING', processed_at = :now, error_message = :instanceId WHERE status = 'PENDING' ORDER BY created_at ASC LIMIT :limit", nativeQuery = true)
+        int lockBatchForSending(@Param("now") Instant now, @Param("instanceId") String instanceId,
+                        @Param("limit") int limit);
+
+        List<EmailRequest> findByStatusAndErrorMessage(EmailRequestStatus status, String errorMessage);
 
 }

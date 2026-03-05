@@ -12,6 +12,8 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.UUID;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @Slf4j
@@ -20,6 +22,7 @@ public class EmailRequestWorker {
     private final EmailRequestRepository repository;
     private final EmailSenderService emailSenderService;
     private final PostcardRenderer postcardRenderer;
+    private final String instanceId = UUID.randomUUID().toString();
 
     public EmailRequestWorker(EmailRequestRepository repository, EmailSenderService emailSenderService,
             PostcardRenderer postcardRenderer) {
@@ -51,17 +54,39 @@ public class EmailRequestWorker {
                                                                       // user truncates lock table, or keep it. I'll
                                                                       // update it to match class name.
             lockAtMostFor = "2m", lockAtLeastFor = "100ms")
+    @Transactional
     public void processPendingRequestsAutomatically() {
-        List<EmailRequest> pendingRequests = repository
-                .findTop100ByStatusOrderByCreatedAtAsc(EmailRequestStatus.PENDING);
+        // Step 1: Atomic locking of up to 100 requests.
+        // We temporarily hijack `error_message` to store the instance ID of the locking
+        // worker
+        // This prevents the need for a dedicated lock table and guarantees no
+        // duplicates even without ShedLock.
+        int lockedCount = repository.lockBatchForSending(Instant.now(), instanceId, 100);
 
+        if (lockedCount == 0) {
+            return; // Nothing to process
+        }
+
+        log.info("[Worker {}] Locked {} email requests for processing.", instanceId, lockedCount);
+
+        // Step 2: Retrieve the requests we just locked
+        List<EmailRequest> pendingRequests = repository.findByStatusAndErrorMessage(EmailRequestStatus.SENDING,
+                instanceId);
+
+        // Step 3: Dispatch them.
+        // The loop itself is synchronous, but `emailSenderService.sendEmail` is
+        // annotated with @Async
+        // which means it immediately hands the task to the 'emailTaskExecutor'
+        // ThreadPool and returns.
+        // Thus, 100 emails are dispatched in a few milliseconds and the ShedLock can
+        // safely release.
         for (EmailRequest request : pendingRequests) {
             try {
-                log.info("[{}] Dispatching email request to async sender", request.getId());
+                // Clear the hijacked error_message field now that we own the row
+                request.setErrorMessage(null);
+                repository.save(request);
 
-                request.setStatus(EmailRequestStatus.SENDING);
-                request.setProcessedAt(Instant.now());
-                repository.saveAndFlush(request);
+                log.info("[{}] Dispatching email request to async sender", request.getId());
 
                 PostcardHtml postcardHtml = postcardRenderer.render(request,
                         "fr".equals(request.getLangCode()) ? "De Mayleo" : "From Mayleo");

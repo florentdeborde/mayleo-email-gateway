@@ -62,14 +62,15 @@ class EmailRequestWorkerTest {
                 // GIVEN
                 EmailRequest request = EmailRequest.builder()
                                 .id("req-123")
-                                .status(EmailRequestStatus.PENDING)
+                                .status(EmailRequestStatus.SENDING)
                                 .apiClient(apiClient)
                                 .langCode("en")
                                 .build();
 
                 PostcardHtml mockHtml = new PostcardHtml("<html></html>", new Postcard("img.jpg", true));
 
-                when(repository.findTop100ByStatusOrderByCreatedAtAsc(EmailRequestStatus.PENDING))
+                when(repository.lockBatchForSending(any(Instant.class), anyString(), eq(100))).thenReturn(1);
+                when(repository.findByStatusAndErrorMessage(eq(EmailRequestStatus.SENDING), anyString()))
                                 .thenReturn(List.of(request));
                 when(postcardRenderer.render(eq(request), anyString())).thenReturn(mockHtml);
 
@@ -80,8 +81,7 @@ class EmailRequestWorkerTest {
                 verify(postcardRenderer).render(request, "From Mayleo");
                 verify(emailSenderService).sendEmail(request, mockHtml);
                 assertEquals(EmailRequestStatus.SENDING, request.getStatus());
-                assertNotNull(request.getProcessedAt());
-                verify(repository).saveAndFlush(request);
+                verify(repository).save(request);
         }
 
         @Test
@@ -90,12 +90,14 @@ class EmailRequestWorkerTest {
                 // GIVEN
                 EmailRequest request = EmailRequest.builder()
                                 .id("fail")
-                                .status(EmailRequestStatus.PENDING)
+                                .status(EmailRequestStatus.SENDING)
                                 .apiClient(apiClient)
                                 .retryCount(0)
                                 .build();
 
-                when(repository.findTop100ByStatusOrderByCreatedAtAsc(any())).thenReturn(List.of(request));
+                when(repository.lockBatchForSending(any(Instant.class), anyString(), eq(100))).thenReturn(1);
+                when(repository.findByStatusAndErrorMessage(eq(EmailRequestStatus.SENDING), anyString()))
+                                .thenReturn(List.of(request));
 
                 when(postcardRenderer.render(any(), any())).thenThrow(new RuntimeException("Render error"));
 
@@ -106,7 +108,7 @@ class EmailRequestWorkerTest {
                 assertEquals(EmailRequestStatus.FAILED, request.getStatus());
                 assertTrue(request.getErrorMessage().contains("Render error"));
                 assertEquals(1, request.getRetryCount());
-                verify(repository).save(request);
+                verify(repository, org.mockito.Mockito.times(2)).save(request);
         }
 
         @Test
