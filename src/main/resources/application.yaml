@@ -17,7 +17,7 @@ app:
     key-smtp: ${MAYLEO_KEY_SMTP}
     flag-hmac-enabled: ${MAYLEO_FLAG_HMAC_ENABLED:true}
     expose-swagger: ${EXPOSE_SWAGGER:false}
-    expose-actuator: ${EXPOSE_ACTUATOR:false}
+    expose-actuator: false # no actuator for now ${EXPOSE_ACTUATOR:false}
   mail:
     max-retries: ${MAIL_MAX_RETRIES:3}
 management:

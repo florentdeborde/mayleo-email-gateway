@@ -6,7 +6,6 @@ import org.springframework.util.AntPathMatcher;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Stream;
 
 @Component
 public class SecurityRegistry {
@@ -33,11 +32,12 @@ public class SecurityRegistry {
     private boolean exposeActuator;
 
     public boolean shouldSkipFilter(String path) {
-        return Stream.of(
-                        SWAGGER_ROUTES,
-                        new String[]{ACTUATOR_ROUTE}
-                )
-                .flatMap(Stream::of)
+        List<String> routesToSkip = new ArrayList<>(List.of(SWAGGER_ROUTES));
+        if (exposeActuator) {
+            routesToSkip.add(ACTUATOR_ROUTE);
+        }
+
+        return routesToSkip.stream()
                 .anyMatch(pattern -> pathMatcher.match(pattern, path));
     }
 
