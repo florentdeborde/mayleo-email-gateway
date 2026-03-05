@@ -21,7 +21,9 @@ import java.util.Collections;
 @Slf4j
 public class SecurityFilter extends OncePerRequestFilter {
 
-    public static final int MAX_BODY_SIZE = 2 * 1024 * 1024;
+    // Security: Limit in-memory buffering to 256KB to prevent Heap Exhaustion (OOM)
+    // via malicious large payloads
+    public static final int MAX_BODY_SIZE = 256 * 1024;
 
     private final ApiClientRepository apiClientRepository;
     private final SecurityRegistry securityRegistry;
