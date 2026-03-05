@@ -53,22 +53,19 @@ public class EncryptionService {
             SecretKeySpec keySpec = buildKey(secretKeyStr);
 
             // Check if string has the IV separator for GCM
-            if (cipherText.contains(":")) {
-                String[] parts = cipherText.split(":", 2);
-                byte[] iv = Base64.getDecoder().decode(parts[0]);
-                byte[] cipherBytes = Base64.getDecoder().decode(parts[1]);
-
-                GCMParameterSpec gcmSpec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
-                Cipher cipher = Cipher.getInstance(GCM_ALGORITHM);
-                cipher.init(Cipher.DECRYPT_MODE, keySpec, gcmSpec);
-
-                return new String(cipher.doFinal(cipherBytes), StandardCharsets.UTF_8);
-            } else {
-                // Fallback to old AES/ECB for backward compatibility
-                Cipher cipher = Cipher.getInstance(ALGORITHM);
-                cipher.init(Cipher.DECRYPT_MODE, keySpec);
-                return new String(cipher.doFinal(Base64.getDecoder().decode(cipherText)), StandardCharsets.UTF_8);
+            if (!cipherText.contains(":")) {
+                throw new IllegalArgumentException("Invalid cipher text format. Missing Initialization Vector (IV).");
             }
+
+            String[] parts = cipherText.split(":", 2);
+            byte[] iv = Base64.getDecoder().decode(parts[0]);
+            byte[] cipherBytes = Base64.getDecoder().decode(parts[1]);
+
+            GCMParameterSpec gcmSpec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
+            Cipher cipher = Cipher.getInstance(GCM_ALGORITHM);
+            cipher.init(Cipher.DECRYPT_MODE, keySpec, gcmSpec);
+
+            return new String(cipher.doFinal(cipherBytes), StandardCharsets.UTF_8);
         } catch (Exception e) {
             log.error("Decryption failed", e);
             throw new RuntimeException("Decryption error", e);
