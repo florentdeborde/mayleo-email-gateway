@@ -31,7 +31,8 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http, ApiClientRepository repo, SecurityRegistry securityRegistry, HmacService hmacService) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http, ApiClientRepository repo,
+            SecurityRegistry securityRegistry, HmacService hmacService) throws Exception {
         http
                 // Manage CORS
                 .cors(cors -> cors.configurationSource(request -> {
@@ -41,7 +42,9 @@ public class SecurityConfig {
                     config.setAllowedOriginPatterns(java.util.List.of("*"));
                     config.setAllowedMethods(java.util.List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
                     config.setAllowedHeaders(java.util.List.of("*"));
-                    config.setAllowCredentials(true);
+                    // We can safely disable credentials (cookies) since the API is stateless
+                    // and relies entirely on X-API-KEY and HMAC headers.
+                    config.setAllowCredentials(false);
                     return config;
                 }))
 
@@ -53,11 +56,11 @@ public class SecurityConfig {
                         // Allow all public routes
                         .requestMatchers(securityRegistry.getPublicRoutes()).permitAll()
                         // All other requests must be authenticated via our custom filter
-                        .anyRequest().authenticated()
-                )
+                        .anyRequest().authenticated())
 
                 // Register our custom SecurityFilter before the standard authentication filter
-                .addFilterBefore(new SecurityFilter(repo, securityRegistry, hmacService, salt, isHmacEnabled), UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(new SecurityFilter(repo, securityRegistry, hmacService, salt, isHmacEnabled),
+                        UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
