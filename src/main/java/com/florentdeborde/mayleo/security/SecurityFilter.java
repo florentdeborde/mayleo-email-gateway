@@ -30,7 +30,8 @@ public class SecurityFilter extends OncePerRequestFilter {
     private final boolean isHmacEnabled;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public SecurityFilter(ApiClientRepository apiClientRepository, SecurityRegistry securityRegistry, HmacService hmacService, String salt, boolean isHmacEnabled) {
+    public SecurityFilter(ApiClientRepository apiClientRepository, SecurityRegistry securityRegistry,
+            HmacService hmacService, String salt, boolean isHmacEnabled) {
         this.apiClientRepository = apiClientRepository;
         this.securityRegistry = securityRegistry;
         this.hmacService = hmacService;
@@ -77,19 +78,28 @@ public class SecurityFilter extends OncePerRequestFilter {
             return;
         }
 
-        // Validate Origin
-        String normalizedOrigin = (origin != null) ? origin.replaceAll("/$", "") : null;
-        if (normalizedOrigin == null || client.getAllowedDomains() == null || !client.getAllowedDomains().contains(normalizedOrigin)) {
-            log.warn("[Security Alert] Origin mismatch | Client: {} | Origin: {} | Masked IP: {}", client.getName(), origin, maskedIp);
-            setErrorResponse(response, HttpServletResponse.SC_FORBIDDEN, ExceptionCode.INVALID_ORIGIN);
-            return;
+        // Validate Origin (Mandatory if client has allowed domains configured)
+        if (client.getAllowedDomains() != null && !client.getAllowedDomains().isEmpty()) {
+            if (origin == null) {
+                log.warn("[Security Alert] Missing Origin | Client: {} | Masked IP: {}", client.getName(), maskedIp);
+                setErrorResponse(response, HttpServletResponse.SC_FORBIDDEN, ExceptionCode.INVALID_ORIGIN);
+                return;
+            }
+            String normalizedOrigin = origin.replaceAll("/$", "");
+            if (!client.getAllowedDomains().contains(normalizedOrigin)) {
+                log.warn("[Security Alert] Origin mismatch | Client: {} | Origin: {} | Masked IP: {}", client.getName(),
+                        origin, maskedIp);
+                setErrorResponse(response, HttpServletResponse.SC_FORBIDDEN, ExceptionCode.INVALID_ORIGIN);
+                return;
+            }
         }
 
         // --- PHASE 2 : PAYLOAD SIZE ---
         long contentLength = request.getContentLengthLong();
         if (contentLength > MAX_BODY_SIZE) {
             log.warn("[Security Alert] Payload too large");
-            setErrorResponse(response, HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE, ExceptionCode.PAYLOAD_TOO_LARGE);
+            setErrorResponse(response, HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE,
+                    ExceptionCode.PAYLOAD_TOO_LARGE);
             return;
         }
 
@@ -98,13 +108,15 @@ public class SecurityFilter extends OncePerRequestFilter {
             wrappedRequest = new CachedBodyHttpServletRequest(request, MAX_BODY_SIZE);
         } catch (IOException e) {
             log.warn("[Security Alert] Payload too large (Streaming) | IP: {}", anonymizeIp(request.getRemoteAddr()));
-            setErrorResponse(response, HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE, ExceptionCode.PAYLOAD_TOO_LARGE);
+            setErrorResponse(response, HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE,
+                    ExceptionCode.PAYLOAD_TOO_LARGE);
             return;
         }
 
         // --- PHASE 3 : HMAC SIGNATURE (only for POST/PUT with body) ---
         String clientSignature = wrappedRequest.getHeader("X-SIGNATURE");
-        if (isHmacEnabled && ("POST".equalsIgnoreCase(wrappedRequest.getMethod()) || "PUT".equalsIgnoreCase(wrappedRequest.getMethod()))) {
+        if (isHmacEnabled && ("POST".equalsIgnoreCase(wrappedRequest.getMethod())
+                || "PUT".equalsIgnoreCase(wrappedRequest.getMethod()))) {
 
             // We use StreamUtils to read the input stream. This action populates the
             // ContentCachingRequestWrapper's internal cache, making the body available
@@ -112,7 +124,8 @@ public class SecurityFilter extends OncePerRequestFilter {
             // byte[] body = StreamUtils.copyToByteArray(wrappedRequest.getInputStream());
             byte[] body = wrappedRequest.getBody();
 
-            if (clientSignature == null || !hmacService.verifySignature(body, clientSignature, client.getHmacSecretKey())) {
+            if (clientSignature == null
+                    || !hmacService.verifySignature(body, clientSignature, client.getHmacSecretKey())) {
                 log.warn("[Security Alert] Invalid HMAC Signature | Client: {} | Path: {}", client.getName(), uri);
                 setErrorResponse(response, HttpServletResponse.SC_UNAUTHORIZED, ExceptionCode.INVALID_SIGNATURE);
                 return;
@@ -123,8 +136,7 @@ public class SecurityFilter extends OncePerRequestFilter {
         UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                 client,
                 null,
-                Collections.emptyList()
-        );
+                Collections.emptyList());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         // --- PHASE 5 : Forward the WRAPPED request to the next filter/controller ---
@@ -143,7 +155,8 @@ public class SecurityFilter extends OncePerRequestFilter {
     }
 
     private String anonymizeIp(String ip) {
-        if (ip == null || ip.isBlank()) return "unknown";
+        if (ip == null || ip.isBlank())
+            return "unknown";
         if (ip.contains(".")) { // IPv4
             return ip.substring(0, ip.lastIndexOf(".") + 1) + "xxx";
         } else if (ip.contains(":")) { // IPv6

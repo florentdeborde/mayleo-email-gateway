@@ -29,12 +29,18 @@ import static org.mockito.Mockito.*;
 @DisplayName("Unit Test - SecurityFilter")
 class SecurityFilterTest {
 
-    @Mock private ApiClientRepository apiClientRepository;
-    @Mock private HmacService hmacService;
-    @Mock private HttpServletRequest request;
-    @Mock private HttpServletResponse response;
-    @Mock private FilterChain filterChain;
-    @Mock private PrintWriter writer;
+    @Mock
+    private ApiClientRepository apiClientRepository;
+    @Mock
+    private HmacService hmacService;
+    @Mock
+    private HttpServletRequest request;
+    @Mock
+    private HttpServletResponse response;
+    @Mock
+    private FilterChain filterChain;
+    @Mock
+    private PrintWriter writer;
 
     private SecurityFilter securityFilter;
     private final String PLAIN_API_KEY = "MAYLEO_API_KEY";
@@ -116,6 +122,43 @@ class SecurityFilterTest {
         verify(response).setStatus(HttpServletResponse.SC_FORBIDDEN);
     }
 
+    @Test
+    @DisplayName("❌ should block request if Origin is null but domains are restricted")
+    void shouldBlockWhenOriginIsNullAndDomainsRestricted() throws Exception {
+        ApiClient client = ApiClient.builder()
+                .apiKey(hashedApiKey).enabled(true)
+                .hmacSecretKey("secret")
+                .allowedDomains(Set.of("https://authorized.com")).build();
+
+        when(request.getHeader("X-API-KEY")).thenReturn(PLAIN_API_KEY);
+        when(request.getHeader("Origin")).thenReturn(null);
+        when(apiClientRepository.findByApiKeyWithDomains(hashedApiKey)).thenReturn(Optional.of(client));
+        when(response.getWriter()).thenReturn(writer);
+
+        securityFilter.doFilterInternal(request, response, filterChain);
+
+        verify(response).setStatus(HttpServletResponse.SC_FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("✅ should allow request if Origin is null and no domains restricted (S2S call)")
+    void shouldAllowWhenOriginIsNullAndNoDomainsRestricted() throws Exception {
+        ApiClient client = ApiClient.builder()
+                .apiKey(hashedApiKey).enabled(true)
+                .hmacSecretKey("secret")
+                .allowedDomains(Set.of()).build(); // Empty allowed domains
+
+        when(request.getHeader("X-API-KEY")).thenReturn(PLAIN_API_KEY);
+        when(request.getHeader("Origin")).thenReturn(null);
+        when(apiClientRepository.findByApiKeyWithDomains(hashedApiKey)).thenReturn(Optional.of(client));
+        when(request.getMethod()).thenReturn("GET"); // no HMAC needed for GET
+        when(request.getInputStream()).thenReturn(new DelegatingServletInputStream(new ByteArrayInputStream(new byte[0])));
+
+        securityFilter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain).doFilter(any(), any());
+    }
+
     // --- PHASE 2 : PAYLOAD SIZE ---
 
     @Test
@@ -137,7 +180,8 @@ class SecurityFilterTest {
         when(request.getContentLengthLong()).thenReturn(100L);
         when(response.getWriter()).thenReturn(writer);
 
-        // Simuler une IOException (jetée par CachedBodyHttpServletRequest quand le stream dépasse la limite)
+        // Simuler une IOException (jetée par CachedBodyHttpServletRequest quand le
+        // stream dépasse la limite)
         when(request.getInputStream()).thenThrow(new IOException("Limit exceeded"));
 
         securityFilter.doFilterInternal(request, response, filterChain);
@@ -183,7 +227,8 @@ class SecurityFilterTest {
     @DisplayName("✅ should correctly anonymize different IP formats")
     void shouldAnonymizeIp() {
         assertEquals("192.168.1.xxx", ReflectionTestUtils.invokeMethod(securityFilter, "anonymizeIp", "192.168.1.50"));
-        assertEquals("2001:0db8:xxxx", ReflectionTestUtils.invokeMethod(securityFilter, "anonymizeIp", "2001:0db8:85a3:0000:0000:8a2e:0370:7334"));
+        assertEquals("2001:0db8:xxxx", ReflectionTestUtils.invokeMethod(securityFilter, "anonymizeIp",
+                "2001:0db8:85a3:0000:0000:8a2e:0370:7334"));
         assertEquals("unknown", ReflectionTestUtils.invokeMethod(securityFilter, "anonymizeIp", ""));
         assertEquals("invalid-ip", ReflectionTestUtils.invokeMethod(securityFilter, "anonymizeIp", "not-an-ip"));
     }
