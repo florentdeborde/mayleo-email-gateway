@@ -115,9 +115,8 @@ class EmailSenderServiceTest {
         emailSenderService.sendEmail(request, postcardHtml);
 
         // THEN
-        verify(emailRequestRepository).save(argThat(req ->
-                req.getStatus() == EmailRequestStatus.PENDING && req.getRetryCount() == 1
-        ));
+        verify(emailRequestRepository)
+                .save(argThat(req -> req.getStatus() == EmailRequestStatus.PENDING && req.getRetryCount() == 1));
         verify(metrics).recordEmailDelivery(MayleoMetrics.STATUS_FAILED);
     }
 
@@ -137,10 +136,41 @@ class EmailSenderServiceTest {
         // WHEN
         emailSenderService.sendEmail(request, postcardHtml);
 
+        verify(emailRequestRepository).save(
+                argThat(req -> req.getStatus() == EmailRequestStatus.FAILED && req.getRetryCount() == MAX_RETRIES));
+    }
+
+    @Test
+    @DisplayName("❌ sendEmail: Should sanitize AuthenticationFailedException to prevent credential leakage")
+    void sendEmail_AuthFailure_ShouldSanitizeErrorMessage() {
+        // GIVEN
+        when(emailConfigRepository.findByApiClient(any())).thenReturn(Optional.of(emailConfig));
+        when(mailSenderFactory.getSender(anyString(), any())).thenReturn(mockMailSender);
+        when(mockMailSender.createMimeMessage()).thenReturn(mock(MimeMessage.class));
+        when(emailRequestRepository.findById(REQUEST_ID)).thenReturn(Optional.of(request));
+
+        // Create an exception chain that mocks what JavaMailSender throws on auth
+        // failure
+        jakarta.mail.AuthenticationFailedException authEx = new jakarta.mail.AuthenticationFailedException(
+                "535 5.7.8 Error: authentication failed: super_secret_password_123");
+        org.springframework.mail.MailAuthenticationException springAuthEx = new org.springframework.mail.MailAuthenticationException(
+                authEx);
+
+        doThrow(springAuthEx).when(mockMailSender).send(any(MimeMessage.class));
+
+        ArgumentCaptor<EmailRequest> requestCaptor = ArgumentCaptor.forClass(EmailRequest.class);
+
+        // WHEN
+        emailSenderService.sendEmail(request, postcardHtml);
+
         // THEN
-        verify(emailRequestRepository).save(argThat(req ->
-                req.getStatus() == EmailRequestStatus.FAILED && req.getRetryCount() == MAX_RETRIES
-        ));
+        verify(emailRequestRepository).save(requestCaptor.capture());
+        EmailRequest savedRequest = requestCaptor.getValue();
+
+        assertEquals("Authentication failed: Please check your SMTP credentials.", savedRequest.getErrorMessage(),
+                "Error message should be sanitized");
+        assertTrue(!savedRequest.getErrorMessage().contains("super_secret_password_123"),
+                "Error message MUST NOT contain the leaked password");
     }
 
     @Test

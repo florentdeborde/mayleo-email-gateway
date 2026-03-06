@@ -232,6 +232,8 @@ The project is actively maintained. Upcoming milestones include:
 - **Observability**: Native integration with **Prometheus & Grafana** for real-time traffic monitoring.
 - **Circuit Breaker**: Automatic suspension of traffic to failing SMTP providers (via Resilience4j).
 - **Advanced Templating**: Support for **Thymeleaf** or **Mustache** for complex dynamic content generation.
+- **Distributed Rate Limiting**: Migration to a Redis-backed Bucket4j configuration to support horizontal scaling without database overhead.
+- **Enhanced API Key Security**: Transition from salted SHA-256 to **Bcrypt** algorithm for stronger key hashing.
 
 ## 📜 License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

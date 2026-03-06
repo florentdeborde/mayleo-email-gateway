@@ -37,7 +37,8 @@ public class EmailSenderService {
 
     private final Map<String, EmailConfig> configCache = new ConcurrentHashMap<>();
 
-    public EmailSenderService(MailSenderFactory mailSenderFactory, EmailRequestRepository emailRequestRepository, EmailConfigRepository emailConfigRepository, MayleoMetrics metrics) {
+    public EmailSenderService(MailSenderFactory mailSenderFactory, EmailRequestRepository emailRequestRepository,
+            EmailConfigRepository emailConfigRepository, MayleoMetrics metrics) {
         this.mailSenderFactory = mailSenderFactory;
         this.emailRequestRepository = emailRequestRepository;
         this.emailConfigRepository = emailConfigRepository;
@@ -50,10 +51,9 @@ public class EmailSenderService {
         String requestId = emailRequest.getId();
 
         try {
-            EmailConfig config = configCache.computeIfAbsent(clientId, id ->
-                    emailConfigRepository.findByApiClient(emailRequest.getApiClient())
-                            .orElseThrow(() -> new MayleoException(ExceptionCode.EMAIL_CONFIG_NOT_FOUND))
-            );
+            EmailConfig config = configCache.computeIfAbsent(clientId,
+                    id -> emailConfigRepository.findByApiClient(emailRequest.getApiClient())
+                            .orElseThrow(() -> new MayleoException(ExceptionCode.EMAIL_CONFIG_NOT_FOUND)));
 
             validateConfiguration(config, requestId);
 
@@ -71,11 +71,26 @@ public class EmailSenderService {
             metrics.recordEmailDelivery(MayleoMetrics.STATUS_SENT);
             updateRequestStatus(requestId, EmailRequestStatus.SENT, null);
 
-        }catch (Exception ex) {
-            log.error("[{}] Failed to send email: {}", requestId, ex.getMessage());
+        } catch (Exception ex) {
+            String sanitizedError = sanitizeErrorMessage(ex);
+            log.error("[{}] Failed to send email: {}", requestId, sanitizedError);
             metrics.recordEmailDelivery(MayleoMetrics.STATUS_FAILED);
-            updateRequestStatus(requestId, EmailRequestStatus.FAILED, ex.getMessage());
+            updateRequestStatus(requestId, EmailRequestStatus.FAILED, sanitizedError);
         }
+    }
+
+    private String sanitizeErrorMessage(Exception ex) {
+        if (ex instanceof org.springframework.mail.MailAuthenticationException ||
+                ex.getCause() instanceof jakarta.mail.AuthenticationFailedException) {
+            return "Authentication failed: Please check your SMTP credentials.";
+        }
+        if (ex instanceof MayleoException) {
+            return ex.getMessage(); // Business exceptions like missing configs aren't confidential
+        }
+
+        // General fallback to avoid leaking anything from JavaMail components that
+        // might contain sensitive data
+        return "An error occurred during email dispatch: " + ex.getClass().getSimpleName();
     }
 
     private void validateConfiguration(EmailConfig config, String requestId) {
@@ -85,7 +100,8 @@ public class EmailSenderService {
                 config.getSmtpUsername() == null || config.getSmtpUsername().isBlank() ||
                 config.getSmtpPassword() == null || config.getSmtpPassword().isBlank()) {
 
-            log.error("[{}] Email configuration is incomplete for client: {}", requestId, config.getApiClient().getName());
+            log.error("[{}] Email configuration is incomplete for client: {}", requestId,
+                    config.getApiClient().getName());
             throw new MayleoException(ExceptionCode.EMAIL_CONFIG_INCOMPLETE);
         }
     }
