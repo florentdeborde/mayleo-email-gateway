@@ -99,7 +99,7 @@ public class SecurityFilter extends OncePerRequestFilter {
         // --- PHASE 2 : PAYLOAD SIZE ---
         long contentLength = request.getContentLengthLong();
         if (contentLength > MAX_BODY_SIZE) {
-            log.warn("[Security Alert] Payload too large");
+            log.warn("[Security Alert] Payload too large | Masked IP: {}", maskedIp);
             setErrorResponse(response, HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE,
                     ExceptionCode.PAYLOAD_TOO_LARGE);
             return;
@@ -109,7 +109,7 @@ public class SecurityFilter extends OncePerRequestFilter {
         try {
             wrappedRequest = new CachedBodyHttpServletRequest(request, MAX_BODY_SIZE);
         } catch (IOException e) {
-            log.warn("[Security Alert] Payload too large (Streaming) | IP: {}", anonymizeIp(request.getRemoteAddr()));
+            log.warn("[Security Alert] Payload too large (Streaming) | Masked IP: {}", maskedIp);
             setErrorResponse(response, HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE,
                     ExceptionCode.PAYLOAD_TOO_LARGE);
             return;
