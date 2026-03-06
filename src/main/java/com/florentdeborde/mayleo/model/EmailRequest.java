@@ -10,60 +10,61 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(
-        name = "email_request",
-        indexes = {
+@Table(name = "email_request", indexes = {
                 // Optimizes Quota checks (Daily & RPM)
                 @Index(name = "idx_email_request_client_date", columnList = "api_client_id, createdAt"),
                 // Optimizes the @Scheduled worker (findTop100)
                 @Index(name = "idx_email_request_status_date", columnList = "status, createdAt")
-        }
-)
+}, uniqueConstraints = {
+                @UniqueConstraint(name = "uk_email_request_idempotency", columnNames = { "api_client_id",
+                                "idempotency_key" })
+})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 public class EmailRequest {
 
-    @Id
-    @Column(length = 36)
-    private String id = UUID.randomUUID().toString();
+        @Id
+        @Column(length = 36)
+        private String id = UUID.randomUUID().toString();
 
-    @ManyToOne
-    @JoinColumn(name = "api_client_id", nullable = false)
-    private ApiClient apiClient;
+        @ManyToOne
+        @JoinColumn(name = "api_client_id", nullable = false)
+        private ApiClient apiClient;
 
-    @Column(length = 255)
-    private String toEmail;
+        @Column(length = 255)
+        private String toEmail;
 
-    @Column(length = 5)
-    private String langCode;
+        @Column(length = 5)
+        private String langCode;
 
-    private String subject;
+        private String subject;
 
-    @Lob
-    @Column(nullable = false)
-    private String message;
+        @Lob
+        @Column(nullable = false)
+        private String message;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "image_source", nullable = false)
-    private ImageSource imageSource = ImageSource.DEFAULT;
+        @Enumerated(EnumType.STRING)
+        @Column(name = "image_source", nullable = false)
+        private ImageSource imageSource = ImageSource.DEFAULT;
 
-    @Column(name = "image_path", length = 255)
-    private String imagePath;
+        @Column(name = "image_path", length = 255)
+        private String imagePath;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private EmailRequestStatus status = EmailRequestStatus.PENDING;
+        @Enumerated(EnumType.STRING)
+        @Column(nullable = false)
+        private EmailRequestStatus status = EmailRequestStatus.PENDING;
 
-    @Lob private String errorMessage;
-    private int retryCount = 0;
+        @Lob
+        private String errorMessage;
+        private int retryCount = 0;
 
-    @Column(nullable = false, updatable = false)
-    private Instant createdAt = Instant.now();
+        @Column(nullable = false, updatable = false)
+        private Instant createdAt = Instant.now();
 
-    private Instant processedAt;
+        private Instant processedAt;
 
-    @Column(name = "idempotency_key", length = 64)
-    private String idempotencyKey;
+        @Column(name = "idempotency_key", length = 64)
+        private String idempotencyKey;
 }

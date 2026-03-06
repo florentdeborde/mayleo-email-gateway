@@ -218,10 +218,12 @@ CREATE TABLE IF NOT EXISTS email_request (
     processed_at TIMESTAMP DEFAULT NULL
         COMMENT 'Timestamp when the request was processed',
 
-    idempotency_key CHAR(36)
+    idempotency_key CHAR(64)
         COMMENT 'Optional key provided by client to ensure request idempotency',
 
     PRIMARY KEY (id),
+
+    UNIQUE KEY uk_email_request_idempotency (api_client_id, idempotency_key),
 
     KEY idx_email_request_status (status),
     KEY idx_email_request_client (api_client_id),
@@ -238,9 +240,6 @@ ON email_request (api_client_id, created_at);
 
 CREATE INDEX idx_email_request_status_created
 ON email_request (status, created_at);
-
-CREATE UNIQUE INDEX idx_email_request_idempotency
-ON email_request (api_client_id, idempotency_key);
 
 -- =============================================================================
 -- Table: shedlock
