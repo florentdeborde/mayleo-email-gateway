@@ -31,4 +31,7 @@ public interface EmailRequestRepository extends JpaRepository<EmailRequest, Stri
 
         List<EmailRequest> findByStatusAndErrorMessage(EmailRequestStatus status, String errorMessage);
 
+        @Modifying
+        @Query("DELETE FROM EmailRequest e WHERE e.createdAt < :cutoff AND e.status = :status")
+        int deleteOldRequests(@Param("cutoff") Instant cutoff, @Param("status") EmailRequestStatus status);
 }

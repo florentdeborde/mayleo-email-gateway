@@ -203,4 +203,33 @@ class EmailRequestWorkerTest {
                 assertThat(annotation.lockAtMostFor())
                                 .isEqualTo("5m");
         }
+
+        @Test
+        @DisplayName("✅ deleteOldRequests: Should delegate deletion to the repository with a cutoff of 30 days and status SENT")
+        void deleteOldRequests_Success() {
+                // GIVEN
+                when(repository.deleteOldRequests(any(Instant.class), eq(EmailRequestStatus.SENT))).thenReturn(5);
+
+                // WHEN
+                emailRequestWorker.deleteOldRequests();
+
+                // THEN
+                verify(repository).deleteOldRequests(any(Instant.class), eq(EmailRequestStatus.SENT));
+        }
+
+        @Test
+        @DisplayName("✅ deleteOldRequests: Check ShedLock annotation presence")
+        void deleteOldRequests_shouldHaveShedLockAnnotation() throws NoSuchMethodException {
+                // GIVEN
+                Method method = EmailRequestWorker.class.getDeclaredMethod("deleteOldRequests");
+
+                // WHEN
+                SchedulerLock annotation = method.getAnnotation(SchedulerLock.class);
+
+                // THEN
+                assertThat(annotation).isNotNull();
+                assertThat(annotation.name()).isEqualTo("EmailRequestWorker_deleteOldRequests");
+                assertThat(annotation.lockAtMostFor()).isEqualTo("10m");
+                assertThat(annotation.lockAtLeastFor()).isEqualTo("1m");
+        }
 }

@@ -117,6 +117,20 @@ public class EmailRequestWorker {
         }
     }
 
+    @Scheduled(cron = "0 0 2 * * ?") // Run every day at 2 AM
+    @SchedulerLock(name = "EmailRequestWorker_deleteOldRequests", lockAtMostFor = "10m", lockAtLeastFor = "1m")
+    @Transactional
+    public void deleteOldRequests() {
+        // Defines the retention period (e.g. 1 day) to prevent the table and
+        // idempotency index from growing indefinitely.
+        Instant cutoff = Instant.now().minus(1, ChronoUnit.DAYS);
+        int deletedCount = repository.deleteOldRequests(cutoff, EmailRequestStatus.SENT);
+        if (deletedCount > 0) {
+            log.info("[Clean Up] Deleted {} old email requests created before {} with status SENT", deletedCount,
+                    cutoff);
+        }
+    }
+
     private void markAsFailed(EmailRequest request, Exception e) {
         request.setStatus(EmailRequestStatus.FAILED);
         request.setErrorMessage(e.getClass().getSimpleName() + ": " + e.getMessage());

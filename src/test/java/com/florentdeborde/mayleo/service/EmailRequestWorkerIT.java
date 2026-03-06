@@ -32,154 +32,213 @@ import static org.mockito.Mockito.*;
 @DisplayName("Integration Test - Email Processing Worker")
 class EmailRequestWorkerIT {
 
-    @Autowired
-    private EmailRequestWorker emailRequestWorker;
+        @Autowired
+        private EmailRequestWorker emailRequestWorker;
 
-    @Autowired
-    private EmailRequestRepository repository;
+        @Autowired
+        private EmailRequestRepository repository;
 
-    @MockitoBean
-    private EmailSenderService emailSenderService;
+        @MockitoBean
+        private EmailSenderService emailSenderService;
 
-    @Autowired
-    private PostcardRenderer postcardRenderer;
+        @Autowired
+        private PostcardRenderer postcardRenderer;
 
-    @MockitoBean
-    private LockProvider lockProvider;
+        @MockitoBean
+        private LockProvider lockProvider;
 
-    @Autowired
-    private ApiClientRepository apiClientRepository;
+        @Autowired
+        private ApiClientRepository apiClientRepository;
 
-    private ApiClient testClient;
+        private ApiClient testClient;
 
-    @Autowired
-    private EntityManager entityManager;
+        @Autowired
+        private EntityManager entityManager;
 
-    @BeforeEach
-    void setup() {
-        repository.deleteAll();
-        apiClientRepository.deleteAll();
+        @BeforeEach
+        void setup() {
+                repository.deleteAll();
+                apiClientRepository.deleteAll();
 
+                testClient = apiClientRepository.save(ApiClient.builder()
+                                .id(UUID.randomUUID().toString())
+                                .name("worker-test-client")
+                                .apiKey("worker-api-key")
+                                .hmacSecretKey("worker-hmac-secret")
+                                .createdAt(Instant.now())
+                                .updatedAt(Instant.now())
+                                .enabled(true)
+                                .dailyQuota(100)
+                                .rpmLimit(100)
+                                .build());
 
-        testClient = apiClientRepository.save(ApiClient.builder()
-                .id(UUID.randomUUID().toString())
-                .name("worker-test-client")
-                .apiKey("worker-api-key")
-                .hmacSecretKey("worker-hmac-secret")
-                .createdAt(Instant.now())
-                .updatedAt(Instant.now())
-                .enabled(true)
-                .dailyQuota(100)
-                .rpmLimit(100)
-                .build());
+                // Mock ShedLock to always acquire lock
+                SimpleLock simpleLock = mock(SimpleLock.class);
+                when(lockProvider.lock(any())).thenReturn(Optional.of(simpleLock));
+        }
 
-        // Mock ShedLock to always acquire lock
-        SimpleLock simpleLock = mock(SimpleLock.class);
-        when(lockProvider.lock(any())).thenReturn(Optional.of(simpleLock));
-    }
+        @Test
+        @DisplayName("✅ Worker: Should pick up PENDING requests and move them to SENDING")
+        void should_process_pending_requests() throws Exception {
+                // Given: Create a PENDING email request
+                EmailRequest pendingRequest = EmailRequest.builder()
+                                .id(UUID.randomUUID().toString())
+                                .apiClient(testClient)
+                                .toEmail("test@example.com")
+                                .subject("Test Subject")
+                                .message("Test Message")
+                                .imageSource(ImageSource.DEFAULT)
+                                .langCode("en")
+                                .createdAt(Instant.now())
+                                .status(EmailRequestStatus.PENDING)
+                                .retryCount(0)
+                                .build();
+                repository.saveAndFlush(pendingRequest);
 
-    @Test
-    @DisplayName("✅ Worker: Should pick up PENDING requests and move them to SENDING")
-    void should_process_pending_requests() throws Exception {
-        // Given: Create a PENDING email request
-        EmailRequest pendingRequest = EmailRequest.builder()
-                .id(UUID.randomUUID().toString())
-                .apiClient(testClient)
-                .toEmail("test@example.com")
-                .subject("Test Subject")
-                .message("Test Message")
-                .imageSource(ImageSource.DEFAULT)
-                .langCode("en")
-                .createdAt(Instant.now())
-                .status(EmailRequestStatus.PENDING)
-                .retryCount(0)
-                .build();
-        repository.saveAndFlush(pendingRequest);
-        
-        // Verify the request was saved as PENDING
-        EmailRequest savedRequest = repository.findById(pendingRequest.getId()).orElseThrow();
-        assertThat(savedRequest.getStatus()).isEqualTo(EmailRequestStatus.PENDING);
+                // Verify the request was saved as PENDING
+                EmailRequest savedRequest = repository.findById(pendingRequest.getId()).orElseThrow();
+                assertThat(savedRequest.getStatus()).isEqualTo(EmailRequestStatus.PENDING);
 
-        // When: The worker processes pending requests
-        emailRequestWorker.processPendingRequestsAutomatically();
+                // When: The worker processes pending requests
+                emailRequestWorker.processPendingRequestsAutomatically();
 
-        // Then: The request should be marked as SENDING
-        entityManager.clear(); // Clear persistence context to force fresh read
-        EmailRequest processedRequest = repository.findById(pendingRequest.getId()).orElseThrow();
-        
-        assertThat(processedRequest.getStatus()).isEqualTo(EmailRequestStatus.SENDING);
-        assertThat(processedRequest.getProcessedAt()).isNotNull();
-        
-        // Verify the email sender service was called
-        verify(emailSenderService, times(1)).sendEmail(any(EmailRequest.class), any(PostcardHtml.class));
-    }
+                // Then: The request should be marked as SENDING
+                entityManager.clear(); // Clear persistence context to force fresh read
+                EmailRequest processedRequest = repository.findById(pendingRequest.getId()).orElseThrow();
 
-    @Test
-    @DisplayName("❌ Worker: Should mark as FAILED and increment retry count on error")
-    void should_handle_processing_errors() throws Exception {
-        // Given: Create a PENDING email request
-        EmailRequest pendingRequest = EmailRequest.builder()
-                .id(UUID.randomUUID().toString())
-                .apiClient(testClient)
-                .toEmail("test@example.com")
-                .subject("Test Subject")
-                .message("Test Message")
-                .imageSource(ImageSource.DEFAULT)
-                .langCode("en")
-                .createdAt(Instant.now())
-                .status(EmailRequestStatus.PENDING)
-                .retryCount(0)
-                .build();
-        repository.save(pendingRequest);
+                assertThat(processedRequest.getStatus()).isEqualTo(EmailRequestStatus.SENDING);
+                assertThat(processedRequest.getProcessedAt()).isNotNull();
 
-        // And: The email sender service will throw an exception
-        doThrow(new RuntimeException("SMTP connection failed"))
-                .when(emailSenderService)
-                .sendEmail(any(EmailRequest.class), any(PostcardHtml.class));
+                // Verify the email sender service was called
+                verify(emailSenderService, times(1)).sendEmail(any(EmailRequest.class), any(PostcardHtml.class));
+        }
 
-        // When: The worker processes pending requests
-        emailRequestWorker.processPendingRequestsAutomatically();
+        @Test
+        @DisplayName("❌ Worker: Should mark as FAILED and increment retry count on error")
+        void should_handle_processing_errors() throws Exception {
+                // Given: Create a PENDING email request
+                EmailRequest pendingRequest = EmailRequest.builder()
+                                .id(UUID.randomUUID().toString())
+                                .apiClient(testClient)
+                                .toEmail("test@example.com")
+                                .subject("Test Subject")
+                                .message("Test Message")
+                                .imageSource(ImageSource.DEFAULT)
+                                .langCode("en")
+                                .createdAt(Instant.now())
+                                .status(EmailRequestStatus.PENDING)
+                                .retryCount(0)
+                                .build();
+                repository.save(pendingRequest);
 
-        // Then: The request should be marked as FAILED
-        entityManager.clear(); // Clear persistence context to force fresh read
-        EmailRequest failedRequest = repository.findById(pendingRequest.getId()).orElseThrow();
-        
-        assertThat(failedRequest.getStatus()).isEqualTo(EmailRequestStatus.FAILED);
-        assertThat(failedRequest.getRetryCount()).isEqualTo(1);
-        assertThat(failedRequest.getErrorMessage()).contains("RuntimeException");
-        assertThat(failedRequest.getErrorMessage()).contains("SMTP connection failed");
-        
-        // Verify the email sender service was called
-        verify(emailSenderService, times(1)).sendEmail(any(EmailRequest.class), any(PostcardHtml.class));
-    }
-    @Test
-    @DisplayName("✅ Worker: Should reset emails stuck in SENDING for too long (Self-Healing)")
-    void should_reset_stuck_requests() {
-        // Given: A request in SENDING state for > 5 minutes
-        EmailRequest stuckRequest = EmailRequest.builder()
-                .id(UUID.randomUUID().toString())
-                .apiClient(testClient)
-                .toEmail("stuck@example.com")
-                .subject("Stuck Email")
-                .message("I am stuck")
-                .imageSource(ImageSource.DEFAULT)
-                .langCode("en")
-                .createdAt(Instant.now().minus(10, java.time.temporal.ChronoUnit.MINUTES))
-                .processedAt(Instant.now().minus(10, java.time.temporal.ChronoUnit.MINUTES))
-                .status(EmailRequestStatus.SENDING)
-                .retryCount(0)
-                .build();
-        repository.saveAndFlush(stuckRequest);
+                // And: The email sender service will throw an exception
+                doThrow(new RuntimeException("SMTP connection failed"))
+                                .when(emailSenderService)
+                                .sendEmail(any(EmailRequest.class), any(PostcardHtml.class));
 
-        // When: The self-healing task runs
-        emailRequestWorker.cleanupStuckRequests();
+                // When: The worker processes pending requests
+                emailRequestWorker.processPendingRequestsAutomatically();
 
-        // Then: The request should be reset to PENDING and retry count incremented
-        entityManager.clear();
-        EmailRequest healedRequest = repository.findById(stuckRequest.getId()).orElseThrow();
+                // Then: The request should be marked as FAILED
+                entityManager.clear(); // Clear persistence context to force fresh read
+                EmailRequest failedRequest = repository.findById(pendingRequest.getId()).orElseThrow();
 
-        assertThat(healedRequest.getStatus()).isEqualTo(EmailRequestStatus.PENDING);
-        assertThat(healedRequest.getRetryCount()).isEqualTo(1);
-        assertThat(healedRequest.getErrorMessage()).contains("Self-Healing");
-    }
+                assertThat(failedRequest.getStatus()).isEqualTo(EmailRequestStatus.FAILED);
+                assertThat(failedRequest.getRetryCount()).isEqualTo(1);
+                assertThat(failedRequest.getErrorMessage()).contains("RuntimeException");
+                assertThat(failedRequest.getErrorMessage()).contains("SMTP connection failed");
+
+                // Verify the email sender service was called
+                verify(emailSenderService, times(1)).sendEmail(any(EmailRequest.class), any(PostcardHtml.class));
+        }
+
+        @Test
+        @DisplayName("✅ Worker: Should reset emails stuck in SENDING for too long (Self-Healing)")
+        void should_reset_stuck_requests() {
+                // Given: A request in SENDING state for > 5 minutes
+                EmailRequest stuckRequest = EmailRequest.builder()
+                                .id(UUID.randomUUID().toString())
+                                .apiClient(testClient)
+                                .toEmail("stuck@example.com")
+                                .subject("Stuck Email")
+                                .message("I am stuck")
+                                .imageSource(ImageSource.DEFAULT)
+                                .langCode("en")
+                                .createdAt(Instant.now().minus(10, java.time.temporal.ChronoUnit.MINUTES))
+                                .processedAt(Instant.now().minus(10, java.time.temporal.ChronoUnit.MINUTES))
+                                .status(EmailRequestStatus.SENDING)
+                                .retryCount(0)
+                                .build();
+                repository.saveAndFlush(stuckRequest);
+
+                // When: The self-healing task runs
+                emailRequestWorker.cleanupStuckRequests();
+
+                // Then: The request should be reset to PENDING and retry count incremented
+                entityManager.clear();
+                EmailRequest healedRequest = repository.findById(stuckRequest.getId()).orElseThrow();
+
+                assertThat(healedRequest.getStatus()).isEqualTo(EmailRequestStatus.PENDING);
+                assertThat(healedRequest.getRetryCount()).isEqualTo(1);
+                assertThat(healedRequest.getErrorMessage()).contains("Self-Healing");
+        }
+
+        @Test
+        @DisplayName("✅ Worker: Should delete old SENT requests")
+        void should_delete_old_sent_requests() {
+                // Given: An old SENT request (2 days old)
+                EmailRequest oldSentRequest = EmailRequest.builder()
+                                .id(UUID.randomUUID().toString())
+                                .apiClient(testClient)
+                                .toEmail("old@example.com")
+                                .subject("Old Email")
+                                .message("I am old")
+                                .imageSource(ImageSource.DEFAULT)
+                                .langCode("en")
+                                .createdAt(Instant.now().minus(2, java.time.temporal.ChronoUnit.DAYS))
+                                .status(EmailRequestStatus.SENT)
+                                .retryCount(0)
+                                .build();
+                repository.saveAndFlush(oldSentRequest);
+
+                // Given: A recent SENT request (12 hours old)
+                EmailRequest recentSentRequest = EmailRequest.builder()
+                                .id(UUID.randomUUID().toString())
+                                .apiClient(testClient)
+                                .toEmail("recent@example.com")
+                                .subject("Recent Email")
+                                .message("I am recent")
+                                .imageSource(ImageSource.DEFAULT)
+                                .langCode("en")
+                                .createdAt(Instant.now().minus(12, java.time.temporal.ChronoUnit.HOURS))
+                                .status(EmailRequestStatus.SENT)
+                                .retryCount(0)
+                                .build();
+                repository.saveAndFlush(recentSentRequest);
+
+                // Given: An old FAILED request (2 days old)
+                EmailRequest oldFailedRequest = EmailRequest.builder()
+                                .id(UUID.randomUUID().toString())
+                                .apiClient(testClient)
+                                .toEmail("failed@example.com")
+                                .subject("Failed Email")
+                                .message("I failed")
+                                .imageSource(ImageSource.DEFAULT)
+                                .langCode("en")
+                                .createdAt(Instant.now().minus(2, java.time.temporal.ChronoUnit.DAYS))
+                                .status(EmailRequestStatus.FAILED)
+                                .retryCount(0)
+                                .build();
+                repository.saveAndFlush(oldFailedRequest);
+
+                // When: The delete job runs
+                emailRequestWorker.deleteOldRequests();
+
+                // Then: Only the old SENT request should be deleted
+                entityManager.clear();
+
+                assertThat(repository.findById(oldSentRequest.getId())).isEmpty();
+                assertThat(repository.findById(recentSentRequest.getId())).isPresent();
+                assertThat(repository.findById(oldFailedRequest.getId())).isPresent();
+        }
 }
