@@ -5,22 +5,28 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.stereotype.Component;
 
-import java.util.Map;
 import java.util.Properties;
-import java.util.concurrent.ConcurrentHashMap;
+
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import java.time.Duration;
 
 @Component
 public class MailSenderFactory {
 
     /**
-     * Cache to store one JavaMailSender per client to avoid expensive object creation
+     * Cache to store one JavaMailSender per client to avoid expensive object
+     * creation
      * and handshake overhead for every email sent.
      */
-    private final Map<String, JavaMailSender> senderCache = new ConcurrentHashMap<>();
+    private final Cache<String, JavaMailSender> senderCache = Caffeine.newBuilder()
+            .expireAfterAccess(Duration.ofHours(12)) // Automatically clean up inactive clients
+            .build();
 
     public JavaMailSender getSender(String clientId, EmailConfig config) {
-        // computeIfAbsent ensures thread-safety: only one sender is created per clientId
-        return senderCache.computeIfAbsent(clientId, key -> {
+        // computeIfAbsent ensures thread-safety: only one sender is created per
+        // clientId
+        return senderCache.get(clientId, key -> {
             JavaMailSenderImpl mailSender = new JavaMailSenderImpl();
 
             switch (config.getProvider()) {
@@ -47,10 +53,11 @@ public class MailSenderFactory {
                 props.put("mail.smtp.ssl.enable", "false");
             }
 
-            // Set timeouts to prevent the application from hanging if the SMTP server is unresponsive
+            // Set timeouts to prevent the application from hanging if the SMTP server is
+            // unresponsive
             props.put("mail.smtp.connectiontimeout", "5000"); // 5s to establish connection
-            props.put("mail.smtp.timeout", "5000");           // 5s to read data
-            props.put("mail.smtp.writetimeout", "5000");      // 5s to send data
+            props.put("mail.smtp.timeout", "5000"); // 5s to read data
+            props.put("mail.smtp.writetimeout", "5000"); // 5s to send data
 
             return mailSender;
         });
@@ -80,6 +87,6 @@ public class MailSenderFactory {
     }
 
     public void invalidateSenderCache(String clientId) {
-        senderCache.remove(clientId);
+        senderCache.invalidate(clientId);
     }
 }
