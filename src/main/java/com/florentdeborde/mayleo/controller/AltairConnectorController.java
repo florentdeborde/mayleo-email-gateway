@@ -62,7 +62,7 @@ public class AltairConnectorController {
         Map<String, Object> resource = new LinkedHashMap<>();
         resource.put("id", "email-requests");
         resource.put("endpoint", "/altair/email-requests");
-        resource.put("labels", Map.of("en", "Email Requests", "fr", "Demandes d'email", "es", "Solicitudes de email"));
+        resource.put("labels", Map.of("en", "Mayleo", "fr", "Mayleo", "es", "Mayleo"));
         resource.put("fields", buildFields());
         resource.put("actions", buildActions());
         resource.put("filters", buildFilters());
