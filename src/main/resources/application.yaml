@@ -22,6 +22,9 @@ app:
     expose-actuator: false # no actuator for now ${EXPOSE_ACTUATOR:false}
   mail:
     max-retries: ${MAIL_MAX_RETRIES:3}
+altair:
+  connector:
+    token: ${ALTAIR_CONNECTOR_TOKEN}
 management:
   endpoints:
     web:

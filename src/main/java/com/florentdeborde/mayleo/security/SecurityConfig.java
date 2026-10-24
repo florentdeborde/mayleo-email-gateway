@@ -23,6 +23,9 @@ public class SecurityConfig {
     @Value("${app.security.flag-hmac-enabled}")
     private boolean isHmacEnabled;
 
+    @Value("${altair.connector.token}")
+    private String altairToken;
+
     @Bean
     public UserDetailsService userDetailsService() {
         // Define an empty user details manager to disable the automatic
@@ -60,7 +63,9 @@ public class SecurityConfig {
 
                 // Register our custom SecurityFilter before the standard authentication filter
                 .addFilterBefore(new SecurityFilter(repo, securityRegistry, hmacService, salt, isHmacEnabled),
-                        UsernamePasswordAuthenticationFilter.class);
+                        UsernamePasswordAuthenticationFilter.class)
+                // Altair connector bearer filter runs before the API-key filter
+                .addFilterBefore(new AltairBearerFilter(altairToken), SecurityFilter.class);
 
         return http.build();
     }

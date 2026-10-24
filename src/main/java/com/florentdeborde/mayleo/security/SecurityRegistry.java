@@ -25,6 +25,11 @@ public class SecurityRegistry {
             "/email-request"
     };
 
+    private static final String[] ALTAIR_ROUTES = {
+            "/altair/**",
+            "/.well-known/**"
+    };
+
     @Value("${app.security.expose-swagger}")
     private boolean exposeSwagger;
 
@@ -33,6 +38,7 @@ public class SecurityRegistry {
 
     public boolean shouldSkipFilter(String path) {
         List<String> routesToSkip = new ArrayList<>(List.of(SWAGGER_ROUTES));
+        routesToSkip.addAll(List.of(ALTAIR_ROUTES));
         if (exposeActuator) {
             routesToSkip.add(ACTUATOR_ROUTE);
         }
