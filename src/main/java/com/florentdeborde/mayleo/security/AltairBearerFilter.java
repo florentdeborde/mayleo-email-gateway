@@ -5,6 +5,8 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -14,6 +16,8 @@ import java.util.Collections;
 import java.util.Map;
 
 public class AltairBearerFilter extends OncePerRequestFilter {
+
+    private static final Logger log = LoggerFactory.getLogger(AltairBearerFilter.class);
 
     private static final String BEARER_PREFIX = "Bearer ";
     private final String expectedToken;
@@ -36,16 +40,19 @@ public class AltairBearerFilter extends OncePerRequestFilter {
         String authHeader = request.getHeader("Authorization");
 
         if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
+            log.warn("[Altair] {} {} — rejected: missing or malformed Authorization header", request.getMethod(), request.getRequestURI());
             writeUnauthorized(response);
             return;
         }
 
         String token = authHeader.substring(BEARER_PREFIX.length());
         if (!expectedToken.equals(token)) {
+            log.warn("[Altair] {} {} — rejected: invalid bearer token", request.getMethod(), request.getRequestURI());
             writeUnauthorized(response);
             return;
         }
 
+        log.debug("[Altair] {} {} — authenticated", request.getMethod(), request.getRequestURI());
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken("altair", null, Collections.emptyList()));
 

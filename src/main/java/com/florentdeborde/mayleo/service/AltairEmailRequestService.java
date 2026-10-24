@@ -4,6 +4,8 @@ import com.florentdeborde.mayleo.dto.altair.EmailRequestAltairDto;
 import com.florentdeborde.mayleo.model.EmailRequest;
 import com.florentdeborde.mayleo.model.EmailRequestStatus;
 import com.florentdeborde.mayleo.repository.EmailRequestRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -19,6 +21,8 @@ import java.util.List;
 @Service
 public class AltairEmailRequestService {
 
+    private static final Logger log = LoggerFactory.getLogger(AltairEmailRequestService.class);
+
     private static final ZoneId UTC = ZoneId.of("UTC");
 
     private final EmailRequestRepository repository;
@@ -33,13 +37,17 @@ public class AltairEmailRequestService {
         Page<EmailRequest> result;
         if (status != null && !status.isBlank()) {
             EmailRequestStatus s = EmailRequestStatus.valueOf(status.toUpperCase());
+            log.info("[Altair] list page={} size={} filter=status:{}", page, size, s);
             result = repository.findByStatus(s, pageable);
         } else if (dateRange != null && !dateRange.isBlank()) {
             Instant[] range = resolveDateRange(dateRange);
+            log.info("[Altair] list page={} size={} filter=dateRange:{} [{} → {}]", page, size, dateRange, range[0], range[1]);
             result = repository.findByCreatedAtBetween(range[0], range[1], pageable);
         } else {
+            log.info("[Altair] list page={} size={} filter=none", page, size);
             result = repository.findAll(pageable);
         }
+        log.info("[Altair] list → {} results (total={})", result.getNumberOfElements(), result.getTotalElements());
         return result.map(this::toDto);
     }
 
@@ -52,15 +60,25 @@ public class AltairEmailRequestService {
     @Transactional
     public void retryBatch(List<String> ids) {
         if (ids == null || ids.isEmpty()) return;
+        log.info("[Altair] retryBatch requested for {} id(s): {}", ids.size(), ids);
+        int retried = 0;
         for (String id : ids) {
-            repository.findById(id).ifPresent(req -> {
-                if (req.getStatus() == EmailRequestStatus.FAILED) {
-                    req.setStatus(EmailRequestStatus.PENDING);
-                    req.setProcessedAt(null);
-                    repository.save(req);
-                }
-            });
+            var opt = repository.findById(id);
+            if (opt.isEmpty()) {
+                log.warn("[Altair] retryBatch — id not found: {}", id);
+                continue;
+            }
+            EmailRequest req = opt.get();
+            if (req.getStatus() == EmailRequestStatus.FAILED) {
+                req.setStatus(EmailRequestStatus.PENDING);
+                req.setProcessedAt(null);
+                repository.save(req);
+                retried++;
+            } else {
+                log.debug("[Altair] retryBatch — skipped {} (status={})", id, req.getStatus());
+            }
         }
+        log.info("[Altair] retryBatch done — {}/{} reset to PENDING", retried, ids.size());
     }
 
     private Instant[] resolveDateRange(String range) {

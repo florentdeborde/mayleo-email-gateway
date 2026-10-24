@@ -3,6 +3,8 @@ package com.florentdeborde.mayleo.controller;
 import com.florentdeborde.mayleo.dto.altair.EmailRequestAltairDto;
 import com.florentdeborde.mayleo.dto.altair.RetryBatchRequestDto;
 import com.florentdeborde.mayleo.service.AltairEmailRequestService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -12,6 +14,8 @@ import java.util.*;
 @RestController
 public class AltairConnectorController {
 
+    private static final Logger log = LoggerFactory.getLogger(AltairConnectorController.class);
+
     private final AltairEmailRequestService service;
 
     public AltairConnectorController(AltairEmailRequestService service) {
@@ -20,6 +24,7 @@ public class AltairConnectorController {
 
     @GetMapping("/.well-known/altair.json")
     public ResponseEntity<Map<String, Object>> manifest() {
+        log.info("[Altair] manifest requested");
         return ResponseEntity.ok(buildManifest());
     }
 
@@ -113,10 +118,12 @@ public class AltairConnectorController {
     }
 
     private Map<String, Object> filter(String id, String en, String fr, String es, String column, String value) {
-        return Map.of(
-            "id", id,
-            "labels", Map.of("en", en, "fr", fr, "es", es),
-            "filterJson", List.of(Map.of("column", column, "condition", "EQUALS", "value", value))
-        );
+        Map<String, Object> f = new LinkedHashMap<>();
+        f.put("id", id);
+        f.put("name", en);
+        f.put("labels", Map.of("en", en, "fr", fr, "es", es));
+        f.put("filterJson", List.of(Map.of("column", column, "condition", "EQUALS", "value", value)));
+        f.put("editable", false);
+        return f;
     }
 }
